@@ -12,6 +12,10 @@ class CreateIssueScreen extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<CreateIssueScreen> {
+  final _formKey = GlobalKey<FormState>();
+
+  final ValueNotifier _isLoading = ValueNotifier(false);
+
   final createIssueUseCase = CreateIssueUseCase(IssuesServiceImpl());
 
   final fullNameController = TextEditingController();
@@ -28,6 +32,7 @@ class _MyHomePageState extends State<CreateIssueScreen> {
 
   @override
   void dispose() {
+    _isLoading.dispose();
     fullNameController.dispose();
     contactInfoController.dispose();
     preferredContactMethodController.dispose();
@@ -49,9 +54,13 @@ class _MyHomePageState extends State<CreateIssueScreen> {
       body: Builder(
         builder: (context) {
           final children = [
-            InputStandard(controller: fullNameController, label: 'ФИО'),
-            InputStandard(controller: contactInfoController, label: 'Контактная информация'),
-            InputStandard(label: 'Предпочтительный способ связи', controller: preferredContactMethodController),
+            InputStandard(controller: fullNameController, label: 'ФИО', required: true),
+            InputStandard(controller: contactInfoController, label: 'Контактная информация', required: true),
+            InputStandard(
+              label: 'Предпочтительный способ связи',
+              controller: preferredContactMethodController,
+              required: true,
+            ),
             ValueListenableBuilder(
               valueListenable: hasChinaExperienceController,
               builder: (context, value, child) {
@@ -72,7 +81,7 @@ class _MyHomePageState extends State<CreateIssueScreen> {
                 );
               },
             ),
-            InputMultiline(label: 'Опишите товар', controller: productDescriptionController),
+            InputMultiline(label: 'Опишите товар', controller: productDescriptionController, required: true),
             InputMultiline(
               label: 'Ссылки на уже существующий товар (Ozon, WB, Poizon...)',
               controller: existingProductLinksController,
@@ -80,7 +89,7 @@ class _MyHomePageState extends State<CreateIssueScreen> {
             Row(
               children: [
                 Expanded(
-                  child: InputDouble(label: 'Плотность', controller: densityController),
+                  child: InputDouble(label: 'Плотность', controller: densityController, required: true),
                 ),
                 IconButton(
                   icon: Icon(Icons.question_mark_outlined),
@@ -143,29 +152,67 @@ class _MyHomePageState extends State<CreateIssueScreen> {
                 );
               },
             ),
-            ElevatedButton(
-              onPressed: () {
-                createIssueUseCase.call(
-                  fullName: fullNameController.text,
-                  contactInfo: contactInfoController.text,
-                  preferredContactMethod: preferredContactMethodController.text,
-                  hasChinaExperience: hasChinaExperienceController.value,
-                  hasSupplierContacts: hasSupplierContactsController.value,
-                  productDescription: productDescriptionController.text,
-                  existingProductLinks: existingProductLinksController.text,
-                  density: double.tryParse(densityController.text) ?? 0.0,
-                  expectedDeliveryDate: whereToShipController.value,
-                );
-              },
-              child: const Text('Отправить'),
+            ValueListenableBuilder(
+              valueListenable: _isLoading,
+              builder: (context, value, child) => value
+                  ? const Center(child: CircularProgressIndicator())
+                  : ElevatedButton(
+                      onPressed: () {
+                        if (!(_formKey.currentState?.validate() ?? false)) return;
+
+                        _isLoading.value = true;
+                        createIssueUseCase
+                            .call(
+                              fullName: fullNameController.text,
+                              contactInfo: contactInfoController.text,
+                              preferredContactMethod: preferredContactMethodController.text,
+                              hasChinaExperience: hasChinaExperienceController.value,
+                              hasSupplierContacts: hasSupplierContactsController.value,
+                              productDescription: productDescriptionController.text,
+                              existingProductLinks: existingProductLinksController.text,
+                              density: double.tryParse(densityController.text) ?? 0.0,
+                              expectedDeliveryDate: whereToShipController.value,
+                            )
+                            .then((_) {
+                              _isLoading.value = false;
+                              return showDialog(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Успех'),
+                                  content: const Text('Ваша заявка успешно отправлена.'),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+                                  ],
+                                ),
+                              );
+                            })
+                            .onError((error, stackTrace) {
+                              _isLoading.value = false;
+                              return showDialog(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Ошибка'),
+                                  content: Text(error.toString()),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+                                  ],
+                                ),
+                              );
+                            });
+                      },
+                      child: const Text('Отправить'),
+                    ),
             ),
           ];
 
-          return ListView.separated(
-            itemCount: children.length,
-            padding: const EdgeInsets.all(16.0),
-            separatorBuilder: (context, index) => const SizedBox(height: 8),
-            itemBuilder: (context, index) => children[index],
+          return Form(
+            key: _formKey,
+            child: ListView.separated(
+              itemCount: children.length,
+              padding: const EdgeInsets.all(16.0),
+              separatorBuilder: (context, index) => const SizedBox(height: 8),
+              itemBuilder: (context, index) => children[index],
+            ),
           );
         },
       ),
